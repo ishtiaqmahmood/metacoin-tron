@@ -1,25 +1,27 @@
-var contractAddress
-var tronWeb
+let contractAddress;
+let tronWeb;
 
-try {
-  contractAddress = metacoinConfig.contractAddress
-  tronWeb = new TronWeb(
+if (typeof metacoinConfig !== 'undefined') {
+  contractAddress = metacoinConfig.contractAddress;
+  try {
+    tronWeb = new TronWeb(
       metacoinConfig.fullHost,
       metacoinConfig.fullHost,
       metacoinConfig.fullHost,
       metacoinConfig.privateKey
-  )
-} catch (err) {
-  alert('The app looks not configured. Please run `npm run migrate`')
+    );
+  } catch (err) {
+    console.error('TronWeb initialization failed:', err);
+  }
+} else {
+  console.warn('metacoinConfig is not defined. Please run `npm run migrate` or configure the app.');
 }
 
-
-App = {
+const App = {
   tronWebProvider: null,
   contracts: {},
   accounts: [],
   contractAddress: contractAddress,
-  privateKey: "da146374a75310b9666e834ee4ad0866d6f4035967bfc76217c5a495fff9f0d0",
   feeLimit: 100000000,
   callValue: 0,
   abi: [
@@ -38,12 +40,12 @@ App = {
       "anonymous": false,
       "inputs": [
         {
-          "indexed": false,
+          "indexed": true,
           "name": "_from",
           "type": "address"
         },
         {
-          "indexed": false,
+          "indexed": true,
           "name": "_to",
           "type": "address"
         },
@@ -54,18 +56,6 @@ App = {
         }
       ],
       "name": "Transfer",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "name": "s",
-          "type": "string"
-        }
-      ],
-      "name": "Log",
       "type": "event"
     },
     {
@@ -144,123 +134,94 @@ App = {
       "type": "function"
     }
   ],
+
   init: async function () {
-
-    this.accounts = [
-      tronWeb.address.fromPrivateKey(metacoinConfig.privateKey)
-    ]
-
-    const account = await tronWeb.createAccount()
-    this.accounts.push(account.address.base58);
-    $("#contractAddress").text(this.contractAddress)
-    $("#accountA").text(this.accounts[0])
-    $("#accountB").text(this.accounts[1])
-    this.initData();
-    this.bindEvents();
-  },
-
-  initData: function () {
-    var c = 0
-
-    function reset() {
-      c++;
-      if (c == 2) {
-        $("#loading").css({display: 'none'});
-        $("#commit").attr('disabled', null);
-      }
+    if (!tronWeb || !this.contractAddress) {
+      alert('The app is not configured. Please run `npm run migrate`');
+      return;
     }
 
-    this.triggerContract('getBalance', [this.accounts[0]], function (data) {
-      $("#dev_old_a").html(data.toNumber());
-      reset();
-    });
+    try {
+      this.accounts = [
+        tronWeb.address.fromPrivateKey(metacoinConfig.privateKey)
+      ];
 
-    this.triggerContract('getBalance', [this.accounts[1]], function (data) {
-      $("#dev_old_b").html(data.toNumber());
-      reset();
-    });
+      const account = await tronWeb.createAccount();
+      this.accounts.push(account.address.base58);
+
+      $("#contractAddress").text(this.contractAddress);
+      $("#accountA").text(this.accounts[0]);
+      $("#accountB").text(this.accounts[1]);
+
+      await this.initData();
+      this.bindEvents();
+    } catch (err) {
+      console.error('App initialization failed:', err);
+    }
   },
 
-  transfer: function () {
-    var that = this;
-    var count = $("#dev_count").val() || 0;
+  initData: async function () {
+    $("#loading").show();
+    $("#commit").prop('disabled', true);
+
+    try {
+      const balanceA = await this.triggerContract('getBalance', [this.accounts[0]]);
+      $("#dev_old_a").html(balanceA.toNumber());
+
+      const balanceB = await this.triggerContract('getBalance', [this.accounts[1]]);
+      $("#dev_old_b").html(balanceB.toNumber());
+    } catch (err) {
+      console.error('Data initialization failed:', err);
+    } finally {
+      $("#loading").hide();
+      $("#commit").prop('disabled', false);
+    }
+  },
+
+  transfer: async function () {
+    const count = $("#dev_count").val() || 0;
     const to = this.accounts[1];
     const amount = parseInt(count);
-    $("#loading").css({display: 'block'});
-    $("#dev_count").val('')
-    $("#commit").attr('disabled', 'disabled')
-    this.triggerContract('sendCoin', [to, amount], function () {
-      that.initData();
 
-    });
-  },
-  getContract: function (address, callback) {
-    tronWeb.getContract(address).then(function (res) {
-      callback && callback(res);
-    });
-  },
-  triggerContract: async function (methodName, args, callback) {
-    let myContract = await tronWeb.contract().at(this.contractAddress)
+    $("#loading").show();
+    $("#dev_count").val('');
+    $("#commit").prop('disabled', true);
 
-    var callSend = 'send'
-    this.abi.forEach(function (val) {
+    try {
+      await this.triggerContract('sendCoin', [to, amount]);
+      await this.initData();
+    } catch (err) {
+      console.error('Transfer failed:', err);
+      $("#loading").hide();
+      $("#commit").prop('disabled', false);
+    }
+  },
+
+  triggerContract: async function (methodName, args) {
+    const myContract = await tronWeb.contract().at(this.contractAddress);
+
+    let callSend = 'send';
+    this.abi.forEach((val) => {
       if (val.name === methodName) {
-        callSend = /payable/.test(val.stateMutability) ? 'send' : 'call'
+        callSend = /payable/.test(val.stateMutability) ? 'send' : 'call';
       }
-    })
+    });
 
-    myContract[methodName](...args)[callSend]({
+    return myContract[methodName](...args)[callSend]({
       feeLimit: this.feeLimit,
       callValue: this.callValue || 0,
-    }).then(function (res) {
-      if (res) {
-        callback && callback(res);
-      }
-    })
-  },
-
-  initTronWeb: function () {
-    /*
-     * Replace me...
-     */
-
-    return this.initContract();
-  },
-
-  initContract: function () {
-    /*
-     * Replace me...
-     */
-
-    return this.bindEvents();
+    });
   },
 
   bindEvents: function () {
-    var that = this;
-    $(document).on('click', '#commit', function () {
-      that.transfer();
+    $(document).on('click', '#commit', () => {
+      this.transfer();
     });
-  },
-
-  markAdopted: function (adopters, account) {
-    /*
-     * Replace me...
-     */
-  },
-
-  handleAdopt: function (event) {
-    event.preventDefault();
-
-    var petId = parseInt($(event.target).data('id'));
-
-    /*
-     * Replace me...
-     */
   }
 };
 
-$(function () {
-  $(window).load(function () {
+$(() => {
+  $(window).on('load', () => {
     App.init();
   });
 });

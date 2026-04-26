@@ -1,4 +1,6 @@
-pragma solidity >0.4.18 < 0.6.0;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
 import "./ConvertLib.sol";
 
 // This is just a simple example of a coin-like contract.
@@ -8,11 +10,11 @@ import "./ConvertLib.sol";
 contract MetaCoin {
   mapping(address => uint) balances;
 
-  event Transfer(address _from, address _to, uint256 _value);
+  event Transfer(address indexed _from, address indexed _to, uint256 _value);
 
-  address owner;
+  address public owner;
 
-  constructor(uint initialBalance) public {
+  constructor(uint initialBalance) {
     owner = msg.sender;
     balances[msg.sender] = initialBalance;
   }
@@ -26,7 +28,6 @@ contract MetaCoin {
   }
 
   function getBalanceInEth(address addr) public view returns (uint){
-
     return ConvertLib.convert(getBalance(addr), 2);
   }
 
